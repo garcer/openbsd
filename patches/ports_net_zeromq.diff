@@ -1,0 +1,32 @@
+Index: Makefile
+===================================================================
+RCS file: /cvs/ports/net/zeromq/Makefile,v
+retrieving revision 1.11
+diff -u -r1.11 Makefile
+--- Makefile	22 Jun 2013 07:45:14 -0000	1.11
++++ Makefile	16 Feb 2014 17:13:37 -0000
+@@ -2,10 +2,10 @@
+ 
+ COMMENT =		open source message queue optimised for performance
+ 
+-DISTNAME =		zeromq-3.2.3
++DISTNAME =		zeromq-3.2.4
+ 
+ SHARED_ONLY =		Yes
+-SHARED_LIBS +=	zmq                  2.0      # 3.0
++SHARED_LIBS +=		zmq 2.0 # 3.0
+ 
+ CATEGORIES =		net
+ HOMEPAGE =		http://zeromq.org/
+Index: distinfo
+===================================================================
+RCS file: /cvs/ports/net/zeromq/distinfo,v
+retrieving revision 1.7
+diff -u -r1.7 distinfo
+--- distinfo	22 Jun 2013 07:45:14 -0000	1.7
++++ distinfo	16 Feb 2014 17:13:37 -0000
+@@ -1,2 +1,2 @@
+-SHA256 (zeromq-3.2.3.tar.gz) = 4TTBqvgp3Xe8qdwPoZm6MQlaWBvQ092l/FlSO59AEjg=
+-SIZE (zeromq-3.2.3.tar.gz) = 2072758
++SHA256 (zeromq-3.2.4.tar.gz) = 35ahQchbZcLLbA2yIiMSZiOgnuy/zLf3RADz+Th0L1k=
++SIZE (zeromq-3.2.4.tar.gz) = 2083123
