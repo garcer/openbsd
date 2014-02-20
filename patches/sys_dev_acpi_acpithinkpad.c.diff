@@ -4,7 +4,7 @@ RCS file: /cvs/src/sys/dev/acpi/acpithinkpad.c,v
 retrieving revision 1.34
 diff -u -r1.34 acpithinkpad.c
 --- acpithinkpad.c	4 Nov 2013 11:57:26 -0000	1.34
-+++ acpithinkpad.c	16 Feb 2014 16:31:11 -0000
++++ acpithinkpad.c	20 Feb 2014 19:48:51 -0000
 @@ -79,12 +79,23 @@
  #define	THINKPAD_BACKLIGHT_CHANGED	0x6050
  #define	THINKPAD_SWITCH_WIRELESS	0x7000
@@ -19,15 +19,15 @@ diff -u -r1.34 acpithinkpad.c
  
 +#define	THINKPAD_ECOFFSET_FANLEVEL	0x2f
 +
-+#define	THINKPAD_ECFANLEVEL_AUTO	7
++#define	THINKPAD_ECFANLEVEL_AUTO	0x80
++#define	THINKPAD_ECFANLEVEL_DISENGAGED	0x40
++#define	THINKPAD_ECFANLEVEL_MAX		7
 +
-+/* highest temperatures (from any sensor) allowed at each fan level (after
-+ * level 2's max temp, it will be put in auto mode) */
 +#define	THINKPAD_MAX_TEMP_LEVEL1	54
-+#define	THINKPAD_MAX_TEMP_LEVEL2	60
++#define	THINKPAD_MAX_TEMP_LEVEL2	64
 +
-+int	staged_temp_setting = 0;
-+ 
++u_int8_t staged = 0;
++
  struct acpithinkpad_softc {
  	struct device		 sc_dev;
  
@@ -60,16 +60,16 @@ diff -u -r1.34 acpithinkpad.c
  {
  	struct acpithinkpad_softc *sc = arg;
 -	u_int8_t lo, hi, i;
-+	u_int8_t lo, hi, i, fanlevel, maxtemp = 0;
++	u_int8_t lo, hi, i, fanlevel, current = 0;
  	int64_t tmp;
  	char sname[5];
  
-@@ -190,12 +211,43 @@
+@@ -190,12 +211,51 @@
  		sc->sc_sens[i].value = (tmp * 1000000) + 273150000;
  		if (tmp > 127 || tmp < -127)
  			sc->sc_sens[i].flags = SENSOR_FINVALID;
-+		else if (tmp > maxtemp)
-+			maxtemp = tmp;
++		else if (tmp > current)
++			current = tmp;
  	}
  
  	/* Read fan RPM */
@@ -81,34 +81,57 @@ diff -u -r1.34 acpithinkpad.c
 +	acpiec_read(sc->sc_ec, THINKPAD_ECOFFSET_FANLEVEL, 1, &fanlevel);
 +	sc->sc_sens[i + 1].value = fanlevel;
 +
-+	/* Set the level according to the highest temperature just seen */
-+	if (!maxtemp || (maxtemp > THINKPAD_MAX_TEMP_LEVEL2)) {
-+		if (fanlevel != THINKPAD_ECFANLEVEL_AUTO) {
-+			if (staged_temp_setting == THINKPAD_ECFANLEVEL_AUTO)
++	/* Manage fan level */
++	if (current < staged || current == staged)
++		staged = 0;
++
++	if (current > THINKPAD_MAX_TEMP_LEVEL2 &&
++	    fanlevel != THINKPAD_ECFANLEVEL_AUTO)
++		staged = 0;
++
++	if (!staged) {
++		if (!current || current > THINKPAD_MAX_TEMP_LEVEL2) {
++			if (fanlevel != THINKPAD_ECFANLEVEL_AUTO)
 +				thinkpad_set_fan_level(sc,
 +					THINKPAD_ECFANLEVEL_AUTO);
-+			else
-+				staged_temp_setting = THINKPAD_ECFANLEVEL_AUTO;
-+		}
-+	} else if (maxtemp > THINKPAD_MAX_TEMP_LEVEL1) {
-+		if (fanlevel != 3) {
-+			if (staged_temp_setting == 3)
-+				thinkpad_set_fan_level(sc, 3);
-+			else
-+				staged_temp_setting = 3;
-+		}
-+	} else if (maxtemp <= THINKPAD_MAX_TEMP_LEVEL1) {
-+		if (fanlevel != 2) {
-+			if (staged_temp_setting == 2)
++			staged = THINKPAD_MAX_TEMP_LEVEL2 - 2;
++		} else if (current < THINKPAD_MAX_TEMP_LEVEL1) {
++			if (fanlevel != 2)
 +				thinkpad_set_fan_level(sc, 2);
-+			else
-+				staged_temp_setting = 2;
++			staged = 0;
++		} else if (current < THINKPAD_MAX_TEMP_LEVEL2 - 4) {
++			if (fanlevel != 3)
++				thinkpad_set_fan_level(sc, 3);
++			staged = current - 2;
++		} else if (current < THINKPAD_MAX_TEMP_LEVEL2 - 2) {
++			if (fanlevel != 4)
++				thinkpad_set_fan_level(sc, 4);
++			staged = current - 2;
 +		}
 +	}
++
++	// XXX
++	printf("staged=%d,current=%d,fanlevel=%d\n",
++			staged,current,fanlevel);
  }
  
  void
-@@ -453,4 +505,10 @@
+@@ -334,7 +394,14 @@
+ 		case THINKPAD_BUTTON_EJECT:
+ 		case THINKPAD_BUTTON_EXTERNAL_SCREEN:
+ 		case THINKPAD_BUTTON_FN_F11:
++			handled = 1;
++			break;
+ 		case THINKPAD_BUTTON_FN_F1:
++			staged = THINKPAD_MAX_TEMP_LEVEL1 + 2;
++			thinkpad_set_fan_level(sc,
++					THINKPAD_ECFANLEVEL_DISENGAGED);
++			handled = 1;
++			break;
+ 		case THINKPAD_BUTTON_FN_F6:
+ 		case THINKPAD_BUTTON_FN_SPACE:
+ 		case THINKPAD_BUTTON_LOCK_SCREEN:
+@@ -453,4 +520,10 @@
  thinkpad_brightness_down(struct acpithinkpad_softc *sc)
  {
  	return (thinkpad_cmos(sc, THINKPAD_CMOS_BRIGHTNESS_DOWN));
