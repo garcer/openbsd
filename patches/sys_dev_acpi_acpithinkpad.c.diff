@@ -1,21 +1,19 @@
-Index: acpithinkpad.c
-===================================================================
-RCS file: /cvs/src/sys/dev/acpi/acpithinkpad.c,v
-retrieving revision 1.34
-diff -u -r1.34 acpithinkpad.c
---- acpithinkpad.c	4 Nov 2013 11:57:26 -0000	1.34
-+++ acpithinkpad.c	20 Feb 2014 19:48:51 -0000
-@@ -79,12 +79,23 @@
- #define	THINKPAD_BACKLIGHT_CHANGED	0x6050
+diff --git a/sys/dev/acpi/acpithinkpad.c b/sys/dev/acpi/acpithinkpad.c
+index 5d5ad752a7e..a5c3aa62f5f 100644
+--- a/sys/dev/acpi/acpithinkpad.c
++++ b/sys/dev/acpi/acpithinkpad.c
+@@ -102,7 +102,7 @@
+ #define	THINKPAD_TABLET_SCREEN_CHANGED	0x60c0
  #define	THINKPAD_SWITCH_WIRELESS	0x7000
  
 -#define THINKPAD_NSENSORS 9
--#define THINKPAD_NTEMPSENSORS 8
-+#define THINKPAD_NSENSORS		10
-+#define THINKPAD_NTEMPSENSORS		8
++#define THINKPAD_NSENSORS 10
+ #define THINKPAD_NTEMPSENSORS 8
  
- #define THINKPAD_ECOFFSET_FANLO		0x84
- #define THINKPAD_ECOFFSET_FANHI		0x85
+ #define THINKPAD_ECOFFSET_VOLUME	0x30
+@@ -113,6 +113,17 @@
+ #define	THINKPAD_ADAPTIVE_MODE_HOME	1
+ #define	THINKPAD_ADAPTIVE_MODE_FUNCTION	3
  
 +#define	THINKPAD_ECOFFSET_FANLEVEL	0x2f
 +
@@ -31,25 +29,27 @@ diff -u -r1.34 acpithinkpad.c
  struct acpithinkpad_softc {
  	struct device		 sc_dev;
  
-@@ -110,6 +121,7 @@
- int	thinkpad_volume_mute(struct acpithinkpad_softc *);
- int	thinkpad_brightness_up(struct acpithinkpad_softc *);
- int	thinkpad_brightness_down(struct acpithinkpad_softc *);
-+void	thinkpad_set_fan_level(struct acpithinkpad_softc *, uint8_t);
+@@ -171,6 +182,8 @@ extern int wskbd_set_mixermute(long, long);
+ extern int wskbd_set_mixervolume(long, long);
+ #endif
  
- void    thinkpad_sensor_attach(struct acpithinkpad_softc *sc);
- void    thinkpad_sensor_refresh(void *);
-@@ -171,14 +183,23 @@
++void	thinkpad_set_fan_level(struct acpithinkpad_softc *, uint8_t);
++
+ struct cfattach acpithinkpad_ca = {
+ 	sizeof(struct acpithinkpad_softc), thinkpad_match, thinkpad_attach,
+ 	NULL, thinkpad_activate
+@@ -225,14 +238,23 @@ thinkpad_sensor_attach(struct acpithinkpad_softc *sc)
  	sc->sc_sens[i].type = SENSOR_FANRPM;
  	sensor_attach(&sc->sc_sensdev, &sc->sc_sens[i]);
  
+-	sensordev_install(&sc->sc_sensdev);
 +	/* Add fan level */
 +	i += 1;
 +	strlcpy(sc->sc_sens[i].desc,"fan level",sizeof(sc->sc_sens[i].desc));
 +	sc->sc_sens[i].type = SENSOR_INTEGER;
 +	sensor_attach(&sc->sc_sensdev, &sc->sc_sens[i]);
 +
- 	sensordev_install(&sc->sc_sensdev);
++ 	sensordev_install(&sc->sc_sensdev);
 +
 +	/* Initialize fan level to auto */
 +	thinkpad_set_fan_level(sc, THINKPAD_ECFANLEVEL_AUTO);
@@ -64,7 +64,7 @@ diff -u -r1.34 acpithinkpad.c
  	int64_t tmp;
  	char sname[5];
  
-@@ -190,12 +211,51 @@
+@@ -244,12 +266,51 @@ thinkpad_sensor_refresh(void *arg)
  		sc->sc_sens[i].value = (tmp * 1000000) + 273150000;
  		if (tmp > 127 || tmp < -127)
  			sc->sc_sens[i].flags = SENSOR_FINVALID;
@@ -97,11 +97,11 @@ diff -u -r1.34 acpithinkpad.c
 +			staged = THINKPAD_MAX_TEMP_LEVEL2 - 2;
 +		} else if (current < THINKPAD_MAX_TEMP_LEVEL1) {
 +			if (fanlevel != 2)
-+				thinkpad_set_fan_level(sc, 2);
++				thinkpad_set_fan_level(sc, 1);
 +			staged = 0;
 +		} else if (current < THINKPAD_MAX_TEMP_LEVEL2 - 4) {
 +			if (fanlevel != 3)
-+				thinkpad_set_fan_level(sc, 3);
++				thinkpad_set_fan_level(sc, 2);
 +			staged = current - 2;
 +		} else if (current < THINKPAD_MAX_TEMP_LEVEL2 - 2) {
 +			if (fanlevel != 4)
@@ -116,7 +116,7 @@ diff -u -r1.34 acpithinkpad.c
  }
  
  void
-@@ -334,7 +394,14 @@
+@@ -434,7 +495,14 @@ thinkpad_hotkey(struct aml_node *node, int notify_type, void *arg)
  		case THINKPAD_BUTTON_EJECT:
  		case THINKPAD_BUTTON_EXTERNAL_SCREEN:
  		case THINKPAD_BUTTON_FN_F11:
@@ -130,15 +130,14 @@ diff -u -r1.34 acpithinkpad.c
 +			break;
  		case THINKPAD_BUTTON_FN_F6:
  		case THINKPAD_BUTTON_FN_SPACE:
- 		case THINKPAD_BUTTON_LOCK_SCREEN:
-@@ -453,4 +520,10 @@
- thinkpad_brightness_down(struct acpithinkpad_softc *sc)
- {
- 	return (thinkpad_cmos(sc, THINKPAD_CMOS_BRIGHTNESS_DOWN));
-+}
+ 		case THINKPAD_BUTTON_FN_TOGGLE:
+@@ -762,3 +830,9 @@ thinkpad_get_volume_mute(struct acpithinkpad_softc *sc)
+ 	    THINKPAD_ECOFFSET_VOLUME_MUTE_MASK);
+ }
+ #endif
 +
 +void
 +thinkpad_set_fan_level(struct acpithinkpad_softc *sc, uint8_t level)
 +{
 +	acpiec_write(sc->sc_ec, THINKPAD_ECOFFSET_FANLEVEL, 1, &level);
- }
++}
